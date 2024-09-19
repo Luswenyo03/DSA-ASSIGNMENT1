@@ -1,4 +1,17 @@
 import ballerina/http;
+import ballerina/time;
+
+function isReviewDue(string registrationDate, time:Utc currentDate) returns boolean {
+    time:Utc regDate;
+    do {
+        regDate = check time:utcFromString(registrationDate  );
+    } on fail {
+        // Handle the error or set a default value for regDate
+        return false; // or another appropriate action
+    }
+    int yearsDiff = <int>(time:utcDiffSeconds(currentDate, regDate) / (365 * 24 * 60 * 60));
+    return yearsDiff >= 5;
+}
 
 service /programmes on new http:Listener(8080) {
 
@@ -43,6 +56,13 @@ service /programmes on new http:Listener(8080) {
         }
     }
 
+    // Resource to retrieve programmes due for review
+    resource function get programmesForReview() returns Programme[]|error {
+        time:Utc currentDate = time:utcNow();
+        return from Programme prog in programmeTable
+               where isReviewDue(prog.registrationDate, currentDate)
+               select prog;
+    }
 
 }
 
