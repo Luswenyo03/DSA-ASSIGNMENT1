@@ -21,6 +21,29 @@ service /programmes on new http:Listener(8080) {
         return programmeTable.toArray();
     }
 
+   // Resource to update an existing programme's information
+    resource function put updateProgramme/[string code](@http:Payload Programme updatedProgramme) returns Programme|NotFoundError {
+        if (programmeTable.hasKey(code)) {
+            Programme existingProgramme = programmeTable.get(code);
+            existingProgramme.nqfLevel = updatedProgramme.nqfLevel;
+            existingProgramme.faculty = updatedProgramme.faculty;
+            existingProgramme.department = updatedProgramme.department;
+            existingProgramme.title = updatedProgramme.title;
+            existingProgramme.registrationDate = updatedProgramme.registrationDate;
+            existingProgramme.courses = updatedProgramme.courses;
+            
+            programmeTable.put(existingProgramme);
+            return existingProgramme;
+        } else {
+            return {
+                body: {
+                    errmsg: string `Programme with code ${code} not found`
+                }
+            };
+        }
+    }
+
+
 }
 
 public type Programme record {| 
