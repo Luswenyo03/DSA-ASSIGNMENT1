@@ -64,6 +64,14 @@ service /programmes on new http:Listener(8080) {
                select prog;
     }
 
+
+    // Resource to retrieve programmes by faculty
+    resource function get programmesByFaculty/[string faculty]() returns Programme[] {
+        return from Programme prog in programmeTable
+               where prog.faculty == faculty
+               select prog;
+    }
+
 }
 
 public type Programme record {| 
