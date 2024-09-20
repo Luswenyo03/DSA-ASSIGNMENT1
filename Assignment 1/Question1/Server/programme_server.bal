@@ -72,6 +72,18 @@ service /programmes on new http:Listener(8080) {
                select prog;
     }
 
+// Resource to delete a programme by code
+    resource function delete deleteProgramme/[string code]() returns http:Ok|NotFoundError {
+        if (programmeTable.hasKey(code)) {
+            return http:OK;
+        } else {
+            return <NotFoundError>{
+                body: {
+                    errmsg: string `Programme with code ${code} not found`
+                }
+            };
+        }
+    }
 
 }
 
