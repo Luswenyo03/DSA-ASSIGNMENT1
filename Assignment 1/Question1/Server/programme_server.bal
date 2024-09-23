@@ -119,4 +119,20 @@ service /pdu on httpListener {
         }
     }
 
+ //Retrieve all the programmes that belong to the same faculty
+    resource function get programmes/faculty/[string faculty_name]() returns Programme[]|ErrorMsg {
+        Programme[] facultyProgrammes = from Programme programme in programmeTable
+            where programme.faculty_name == faculty_name
+            select programme;
+
+        if facultyProgrammes.length() > 0 {
+            return facultyProgrammes;
+        } else {
+            return {
+                errmsg: "No programmes found for the given faculty."
+            };
+        }
+    }
+
+
 }
