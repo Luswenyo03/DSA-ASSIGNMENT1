@@ -1,5 +1,5 @@
 import ballerina/http;
-
+import ballerina/time;
 
 listener http:Listener httpListener = new (8080);
 
@@ -37,7 +37,60 @@ public type ErrorMsg record {|
     string errmsg;
 |};
 
-public final table<Programme> key(programme_code) programmeTable = table [];
+public final table<Programme> key(programme_code) programmeTable = table [
+    {
+        programme_code: "07BACS",
+        nqf_level: 7,
+        faculty_name: "Computing and Informatics",
+        department_name: "Software Engineering",
+        programme_title: "Bachelor of Computer Science",
+        reg_date: "2024-12-20",
+        courses: [
+            {
+                courseCode: "DSA",
+                courseName: "Distributed Systems Architecture",
+                nqf_level: 7
+            },
+            {
+                courseCode: "DBMS",
+                courseName: "Database Management Systems",
+                nqf_level: 6
+            },
+            {
+                courseCode: "AI",
+                courseName: "Artificial Intelligence",
+                nqf_level: 7
+            }
+        ]
+    },
+    {
+        programme_code: "08BBA",
+        nqf_level: 8,
+        faculty_name: "Business and Management",
+        department_name: "Business Administration",
+        programme_title: "Bachelor of Business Administration",
+        reg_date: "2018-09-15",
+        courses: [
+            {
+                courseCode: "MGT101",
+                courseName: "Management Principles",
+                nqf_level: 8
+            },
+            {
+                courseCode: "ACC201",
+                courseName: "Financial Accounting",
+                nqf_level: 7
+            },
+            {
+                courseCode: "MKT301",
+                courseName: "Marketing Strategies",
+                nqf_level: 8
+            }
+        ]
+    }
+
+];
+
 service /pdu on httpListener {
 
     //Add a new programme
@@ -57,7 +110,12 @@ service /pdu on httpListener {
         }
     }
 
-//Retrieve details of a specific programme by programme code
+    //Retrieve a list of all programmes within the Programme Development Unit (PDU)
+    resource function get programmes() returns Programme[] {
+        return programmeTable.toArray();
+    }
+
+    //Retrieve details of a specific programme by programme code
     resource function get programme/[string programme_code]() returns Programme|InvalidProgrammeCodeError {
         Programme? programme = programmeTable[programme_code];
         if programme is () {
@@ -70,7 +128,7 @@ service /pdu on httpListener {
         return programme;
     }
 
-//Update an existing programme's information according to the programme code
+    //Update an existing programme's information according to the programme code
     resource function put updateProgramme/[string programme_code](@http:Payload Programme programme) returns InvalidProgrammeCodeError|error|Programme {
         Programme? existingProgramme = programmeTable[programme_code];
 
@@ -103,7 +161,7 @@ service /pdu on httpListener {
         }
     }
 
-// Delete a specific programme by programme code
+    // Delete a specific programme by programme code
     resource function delete deleteProgram/[string programme_code]() returns http:Ok|error {
 
         Programme? removed = programmeTable.remove(programme_code);
@@ -119,7 +177,7 @@ service /pdu on httpListener {
         }
     }
 
- //Retrieve all the programmes that belong to the same faculty
+    //Retrieve all the programmes that belong to the same faculty
     resource function get programmes/faculty/[string faculty_name]() returns Programme[]|ErrorMsg {
         Programme[] facultyProgrammes = from Programme programme in programmeTable
             where programme.faculty_name == faculty_name
@@ -133,12 +191,9 @@ service /pdu on httpListener {
             };
         }
     }
-    //Retrieve a list of all programmes within the Programme Development Unit (PDU)
-    resource function get programmes() returns Programme[] {
-        return programmeTable.toArray();
-    } 
 
-//Retrieve all the programmes that are due for review
+
+    //Retrieve all the programmes that are due for review
     resource function get reviewProgrammes() returns Programme[]|error {
         string fiveYearsBack = getFiveYearsDateFromCurrentDate();
 
@@ -156,4 +211,26 @@ service /pdu on httpListener {
 
 }
 
+function getFiveYearsDateFromCurrentDate() returns string {
+    time:Utc currentUtc = time:utcNow();
+    time:Civil currentDateTime = time:utcToCivil(currentUtc);
+    int pastYear = currentDateTime.year - 5;
+    string formattedDate = pastYear.toString() + "-" +
+                        (currentDateTime.month < 10 ? "0" + currentDateTime.month.toString() : currentDateTime.month.toString()) + "-" +
+                        (currentDateTime.day < 10 ? "0" + currentDateTime.day.toString() : currentDateTime.day.toString());
 
+    return formattedDate;
+}
+
+function compareDates(string reg_date, string fiveYearsBack) returns boolean|error {
+
+    string timeStr = "T00:00:00Z";
+    time:Civil utcToCivil1 = check time:civilFromString(reg_date + timeStr);
+    time:Civil utcToCivil2 = check time:civilFromString(fiveYearsBack + timeStr);
+
+    time:Utc utcFromCivil1 = check time:utcFromCivil(utcToCivil1);
+    time:Utc utcFromCivil2 = check time:utcFromCivil(utcToCivil2);
+
+    return (utcFromCivil1 <= utcFromCivil2);
+
+}
