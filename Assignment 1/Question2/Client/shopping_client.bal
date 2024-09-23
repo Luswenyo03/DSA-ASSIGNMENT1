@@ -114,3 +114,79 @@ function updateProduct() returns error? {
             io:println("\n  Error: Invalid input for price. Please enter a valid float like 100.00.");
         }
     }
+int updatedStockQuantity = 0; // Initialize with a default value
+    while true {
+        string quantityInput = getInput("  Enter updated stock quantity: ");
+        var result = int:fromString(quantityInput);
+        if result is int {
+            updatedStockQuantity = result;
+            if (updatedStockQuantity < 0) {
+                io:println("  Error: Stock quantity must be a non-negative integer.");
+            } else {
+                break;
+            }
+        } else {
+            io:println("  Error: Invalid input for quantity. Please enter a valid integer.");
+        }
+    }
+
+    string updatedStatus = ""; // Initialize with a default value
+    while true {
+        string statusInput = getInput("  Enter updated product status (A for available, U for unavailable): ");
+        if (statusInput == "A") {
+            updatedStatus = "available";
+            break;
+        } else if (statusInput == "U") {
+            updatedStatus = "unavailable";
+            break;
+        } else {
+            io:println("  Error: Status must be 'A' for available or 'U' for unavailable. Please enter again.");
+        }
+    }
+
+    UpdateProductRequest updateProductRequest = {
+        sku: sku,
+        product: {
+            sku: updatedSku,
+            name: updatedName,
+            description: updatedDescription,
+            price: updatedPrice,
+            stock_quantity: updatedStockQuantity,
+            status: updatedStatus
+        }
+    };
+
+    check ep->updateProduct(updateProductRequest);
+
+    io:println("\n Successfully updated product: ");
+}
+
+// Function to remove a product
+function removeProduct() returns error? {
+    RemoveProductRequest removeProductRequest = {sku: getInput("Enter product SKU to remove: ")};
+    ListProductsResponse removeProductResponse = check ep->removeProduct(removeProductRequest);
+    io:println(removeProductResponse);
+}
+
+// Function to list available products
+function listAvailableProducts() returns error? {
+    ListProductsResponse listAvailableProductsResponse = check ep->listAvailableProducts();
+    io:println(listAvailableProductsResponse);
+}
+
+// Function to search for a product
+function searchProduct() returns error? {
+    SearchProductRequest searchProductRequest = {sku: getInput("Enter product SKU to search: ")};
+    SearchProductResponse searchProductResponse = check ep->searchProduct(searchProductRequest);
+    io:println(searchProductResponse);
+}
+
+// Function to add to cart
+function addToCart() returns error? {
+    AddToCartRequest addToCartRequest = {
+        user_id: getInput("Enter user ID: "),
+        sku: getInput("Enter product SKU to add: "),
+        quantity: check int:fromString(getInput("Enter quantity: "))
+    };
+    check ep->addToCart(addToCartRequest);
+}
