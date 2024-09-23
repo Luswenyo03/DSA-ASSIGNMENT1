@@ -69,6 +69,38 @@ service /pdu on httpListener {
         }
         return programme;
     }
-   
+
+//Update an existing programme's information according to the programme code
+    resource function put updateProgramme/[string programme_code](@http:Payload Programme programme) returns InvalidProgrammeCodeError|error|Programme {
+        Programme? existingProgramme = programmeTable[programme_code];
+
+        if (existingProgramme is Programme) {
+            // Update the existing programme details
+            existingProgramme.nqf_level = programme.nqf_level;
+            existingProgramme.faculty_name = programme.faculty_name;
+            existingProgramme.department_name = programme.department_name;
+            existingProgramme.courses = programme.courses;
+
+            // Update programme_title only if provided and not empty
+            if (programme.programme_title != "") {
+                existingProgramme.programme_title = programme.programme_title;
+            }
+
+            // Update reg_date only if provided and not empty
+            if (programme.reg_date != "") {
+                existingProgramme.reg_date = programme.reg_date;
+            }
+            // Put the updated programme back into the table
+            programmeTable.put(existingProgramme);
+
+            return existingProgramme;
+        } else {
+            return {
+                body: {
+                    errmsg: string `Invalid programme code: ${programme_code}`
+                }
+            };
+        }
+    }
 
 }
