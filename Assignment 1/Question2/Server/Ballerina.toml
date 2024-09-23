@@ -1,6 +1,6 @@
 [package]
-org = "i5_acer"
-name = "Server"
+org = "mabuta_musilizo"
+name = "server"
 version = "0.1.0"
 distribution = "2201.10.0"
 
