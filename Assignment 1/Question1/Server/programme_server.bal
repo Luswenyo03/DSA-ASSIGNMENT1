@@ -103,4 +103,20 @@ service /pdu on httpListener {
         }
     }
 
+// Delete a specific programme by programme code
+    resource function delete deleteProgram/[string programme_code]() returns http:Ok|error {
+
+        Programme? removed = programmeTable.remove(programme_code);
+
+        if (removed is Programme) {
+            return http:OK;
+        } else {
+            return {
+                body: {
+                    errmsg: string `Invalid programme code: ${programme_code}`
+                }
+            };
+        }
+    }
+
 }
