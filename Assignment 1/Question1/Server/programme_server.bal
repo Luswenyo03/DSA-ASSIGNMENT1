@@ -133,6 +133,27 @@ service /pdu on httpListener {
             };
         }
     }
+    //Retrieve a list of all programmes within the Programme Development Unit (PDU)
+    resource function get programmes() returns Programme[] {
+        return programmeTable.toArray();
+    } 
 
+//Retrieve all the programmes that are due for review
+    resource function get reviewProgrammes() returns Programme[]|error {
+        string fiveYearsBack = getFiveYearsDateFromCurrentDate();
+
+        Programme[] reviewProgrammes = [];
+
+        // Loop through programmeTable data
+        foreach Programme programme in programmeTable {
+            if (check compareDates(programme.reg_date, fiveYearsBack)) {
+                reviewProgrammes.push(programme);
+            }
+        }
+
+        return reviewProgrammes;
+    }
 
 }
+
+
