@@ -57,6 +57,18 @@ service /pdu on httpListener {
         }
     }
 
+//Retrieve details of a specific programme by programme code
+    resource function get programme/[string programme_code]() returns Programme|InvalidProgrammeCodeError {
+        Programme? programme = programmeTable[programme_code];
+        if programme is () {
+            return {
+                body: {
+                    errmsg: string `Invalid programme code: ${programme_code}`
+                }
+            };
+        }
+        return programme;
+    }
    
 
 }
