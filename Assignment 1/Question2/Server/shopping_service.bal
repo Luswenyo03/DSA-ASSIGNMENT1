@@ -1,262 +1,151 @@
-import ballerina/io;
+import ballerina/grpc;
+import ballerina/time;
 
-ShoppingClient ep = check new ("http://localhost:9090");
+listener grpc:Listener ep = new (9090);
 
-// Function to capture user input
-function getInput(string prompt) returns string {
-    io:print(prompt);
-    return io:readln();
+// Helper function to generate a unique order ID
+function generateOrderId(string userId) returns string {
+    time:Utc currentUtc = time:utcNow();
+    time:Civil currentDateTime = time:utcToCivil(currentUtc);
+    return "order_" + userId + "_" + currentDateTime.toString();
 }
 
-public function displayProduct(Product product) returns error? {
-    io:println("\n*** Product Details ***\n");
-    io:println("SKU: " + product.sku);
-    io:println("Name: " + product.name);
-    io:println("Description: " + product.description);
-    io:println("Price: N$: " + product.price.toString());
-    io:println("Stock Quantity: " + product.stock_quantity.toString());
-    io:println("Status: " + product.status);
-    io:println("\n ------------------------------\n");
-}
+map<map<CartItem>> carts = {};
+map<Product> products = {};
+map<User> users = {};
+map<Order> orders = {};
 
-// Function to add a product
-function addProduct() returns error? {
+@grpc:Descriptor {value: SHOPPING_DESC}
+service "Shopping" on ep {
 
-    io:println("\n ***Adding new product***");
+    // Admin function to add a product
+    remote function addProduct(AddProductRequest request) returns AddProductResponse|error {
+        products[request.product.sku] = request.product;
+        return {product_code: request.product.sku};
+    }
 
-    string sku = getInput("\n  Enter product SKU: ");
-    string name = getInput("  Enter product name: ");
-    string description = getInput("  Enter product description: ");
+    // Admin function to update a product's details
+    remote function updateProduct(UpdateProductRequest request) returns error? {
 
-    float price = 0.0; // Initialize with a default value
-    while true {
-        string priceInput = getInput("  Enter product price (e.g. 100.00) N$: ");
-        var result = float:fromString(priceInput);
-        if result is float {
-            price = result;
-            if (price < 0.0) {
-                io:println("\n  Error: Price must be a positive float.\n");
+        Product? retrievedProduct = products[request.sku];
+
+        if (retrievedProduct is Product) {
+            products[request.sku] = request.product;
+        } else {
+            return error("Product not found");
+        }
+
+    }
+
+    // Admin function to remove a product
+    remote function removeProduct(RemoveProductRequest request) returns ListProductsResponse|error {
+        Product? product = products.remove(request.sku);
+        if product is () {
+            return error("Product not found");
+        }
+
+        Product[] remainingProducts = [];
+        foreach var p in products {
+            remainingProducts.push(p);
+        }
+
+        ListProductsResponse response = {products: remainingProducts};
+        return response;
+    }
+
+    // Customer function to list all available products  
+    remote function listAvailableProducts() returns ListProductsResponse {
+        Product[] availableProducts = [];
+        foreach var product in products {
+            if product.status == "available" {
+                availableProducts.push(product);
+            }
+        }
+        return {products: availableProducts};
+    }
+
+    // Customer function to search for a product by SKU
+    remote function searchProduct(SearchProductRequest request) returns SearchProductResponse|error {
+        Product? product = products[request.sku];
+        if product is () {
+            return {message: "Product not found"};
+        }
+        return {product: product};
+    }
+
+    // Customer function to add a product to the cart
+    remote function addToCart(AddToCartRequest request) returns error? {
+        Product? product = products[request.sku];
+        if product is () {
+            return error("Product not found");
+        }
+
+        if carts.hasKey(request.user_id) {
+            CartItem? existingItem = carts[request.user_id][request.sku];
+            if existingItem is CartItem { // Check if existingItem is of type CartItem
+                existingItem.quantity += request.quantity; // Modify the existing item's quantity
             } else {
-                break;
+                // If there is no existing item, create a new one
+                carts[request.user_id][request.sku] = {sku: request.sku, quantity: request.quantity};
             }
         } else {
-            io:println("\n  Error: Invalid input for price. Please enter a valid float like 100.00.\n");
+            // Create a new cart for the user
+            map<CartItem> newCart = {};
+            newCart[request.sku] = {sku: request.sku, quantity: request.quantity};
+            carts[request.user_id] = newCart;
         }
     }
 
-    int stock_quantity = 0; // Initialize with a default value
-    while true {
-        string quantityInput = getInput("  Enter stock quantity: ");
-        var result = int:fromString(quantityInput);
-        if result is int {
-            stock_quantity = result;
-            if (stock_quantity < 0) {
-                io:println("\n  Error: Stock quantity must be a non-negative integer.\n");
+    // Customer function to place an order
+    remote function placeOrder(PlaceOrderRequest request) returns PlaceOrderResponse {
+        // Check if the cart exists for the user
+        if carts.hasKey(request.user_id) {
+            map<CartItem>? cartItems = carts[request.user_id];
+            float totalPrice = 0.0;
+
+            // Ensure cartItems is a valid map
+            if cartItems is map<CartItem> {
+                foreach var item in cartItems {
+                    Product? product = products[item.sku];
+                    if product is Product {
+                        totalPrice += product.price * item.quantity;
+                    }
+                }
+
+                string orderId = generateOrderId(request.user_id);
+                Order currentOrder = {
+                    order_id: orderId,
+                    user_id: request.user_id,
+                    items: cartItems.toArray(),
+                    total_price: totalPrice
+                };
+
+                orders[orderId] = currentOrder;
+                _ = carts.remove(request.user_id);
+
+                PlaceOrderResponse pOR = {newOrder: {order_id: "", user_id: "", items: [], total_price: 0.0}, message: "Your message here"};
+
+                return pOR;
             } else {
-                break;
+                PlaceOrderResponse pOR = {newOrder: {}, message: "Cart is empty or invalid"};
+                return pOR;
             }
         } else {
-            io:println("\n  Error: Invalid input for quantity. Please enter a valid integer.\n");
+            PlaceOrderResponse pOR = {newOrder: {}, message: "No items in the cart"};
+            return pOR;
         }
     }
 
-    string statusInput = ""; // Initialize with an empty string
-    while true {
-        string statusChoice = getInput("  Enter product status (A for available, U for unavailable): ");
-        if (statusChoice == "A") {
-            statusInput = "available";
-            break;
-        } else if (statusChoice == "U") {
-            statusInput = "unavailable";
-            break;
-        } else {
-            io:println("\n  Error: Status must be 'A' for available or 'U' for unavailable.\n");
+    // Function to create multiple users
+    remote function createUsers(stream<User> userStream) returns CreateUsersResponse {
+        error? e = userStream.forEach(function(User user) {
+            users[user.user_id] = user;
+        });
+        if e is error {
+            return {message: "Failed to create users"};
         }
+        return {message: "Users created successfully"};
     }
 
-    AddProductRequest addProductRequest = {
-        product: {
-            sku: sku,
-            name: name,
-            description: description,
-            price: price,
-            stock_quantity: stock_quantity,
-            status: statusInput
-        }
-    };
-
-    AddProductResponse addProductResponse = check ep->addProduct(addProductRequest);
-
-    io:println("\n Successfully added new product: " + addProductResponse.toString());
 }
 
-// Function to update a product
-function updateProduct() returns error? {
-    io:println("\n ***Update product***");
-
-    string sku = getInput("\n  Enter product SKU: ");
-
-    string updatedSku = getInput("  Enter updated product SKU: ");
-    string updatedName = getInput("  Enter updated product name: ");
-    string updatedDescription = getInput("  Enter updated product description: ");
-
-    float updatedPrice = 0.0; // Initialize with a default value
-    while true {
-        string priceInput = getInput("  Enter updated price: ");
-        var result = float:fromString(priceInput);
-        if result is float {
-            updatedPrice = result;
-            if (updatedPrice < 0.0) {
-                io:println("\n  Error: Price must be a positive float.");
-            } else {
-                break;
-            }
-        } else {
-            io:println("\n  Error: Invalid input for price. Please enter a valid float like 100.00.");
-        }
-    }
-
-    int updatedStockQuantity = 0; // Initialize with a default value
-    while true {
-        string quantityInput = getInput("  Enter updated stock quantity: ");
-        var result = int:fromString(quantityInput);
-        if result is int {
-            updatedStockQuantity = result;
-            if (updatedStockQuantity < 0) {
-                io:println("  Error: Stock quantity must be a non-negative integer.");
-            } else {
-                break;
-            }
-        } else {
-            io:println("  Error: Invalid input for quantity. Please enter a valid integer.");
-        }
-    }
-
-    string updatedStatus = ""; // Initialize with a default value
-    while true {
-        string statusInput = getInput("  Enter updated product status (A for available, U for unavailable): ");
-        if (statusInput == "A") {
-            updatedStatus = "available";
-            break;
-        } else if (statusInput == "U") {
-            updatedStatus = "unavailable";
-            break;
-        } else {
-            io:println("  Error: Status must be 'A' for available or 'U' for unavailable. Please enter again.");
-        }
-    }
-
-    UpdateProductRequest updateProductRequest = {
-        sku: sku,
-        product: {
-            sku: updatedSku,
-            name: updatedName,
-            description: updatedDescription,
-            price: updatedPrice,
-            stock_quantity: updatedStockQuantity,
-            status: updatedStatus
-        }
-    };
-
-    check ep->updateProduct(updateProductRequest);
-
-    io:println("\n Successfully updated product: ");
-}
-
-// Function to remove a product
-function removeProduct() returns error? {
-    RemoveProductRequest removeProductRequest = {sku: getInput("Enter product SKU to remove: ")};
-    ListProductsResponse removeProductResponse = check ep->removeProduct(removeProductRequest);
-    io:println(removeProductResponse);
-}
-
-// Function to list available products
-function listAvailableProducts() returns error? {
-    ListProductsResponse listAvailableProductsResponse = check ep->listAvailableProducts();
-    io:println(listAvailableProductsResponse);
-}
-
-// Function to search for a product
-function searchProduct() returns error? {
-    SearchProductRequest searchProductRequest = {sku: getInput("Enter product SKU to search: ")};
-    SearchProductResponse searchProductResponse = check ep->searchProduct(searchProductRequest);
-    io:println(searchProductResponse);
-}
-
-// Function to add to cart
-function addToCart() returns error? {
-    AddToCartRequest addToCartRequest = {
-        user_id: getInput("Enter user ID: "),
-        sku: getInput("Enter product SKU to add: "),
-        quantity: check int:fromString(getInput("Enter quantity: "))
-    };
-    check ep->addToCart(addToCartRequest);
-}
-
-// Function to place an order
-function placeOrder() returns error? {
-    PlaceOrderRequest placeOrderRequest = {user_id: getInput("Enter user ID to place order: ")};
-    PlaceOrderResponse placeOrderResponse = check ep->placeOrder(placeOrderRequest);
-    io:println(placeOrderResponse);
-}
-
-// Function to create users
-function createUsers() returns error? {
-    CreateUsersRequest createUsersRequest = {
-        users: [
-            {
-                user_id: getInput("Enter user ID: "),
-                name: getInput("Enter user name: "),
-                'type: <UserType>getInput("Enter user type (CUSTOMER/ADMIN): ")
-            }
-        ]
-    };
-    CreateUsersResponse createUsersResponse = check ep->createUsers(createUsersRequest);
-    io:println(createUsersResponse);
-}
-
-// Main function to handle user choices
-public function main() returns error? {
-    while true {
-        int choice = check getUserChoice();
-
-        if choice == 1 {
-            check addProduct();
-        } else if choice == 2 {
-            check updateProduct();
-        } else if choice == 3 {
-            check removeProduct();
-        } else if choice == 4 {
-            check listAvailableProducts();
-        } else if choice == 5 {
-            check searchProduct();
-        } else if choice == 6 {
-            check addToCart();
-        } else if choice == 7 {
-            check placeOrder();
-        } else if choice == 8 {
-            check createUsers();
-        } else if choice == 9 {
-            io:println("Exiting...");
-            return;
-        } else {
-            io:println("Invalid option. Please try again.");
-        }
-    }
-}
-
-// Function to display menu and get user choice
-function getUserChoice() returns int|error {
-    io:println("\n==== Shopping Management System ====\n");
-    io:println("1. Add Product");
-    io:println("2. Update Product");
-    io:println("3. Remove Product");
-    io:println("4. List Available Products");
-    io:println("5. Search Product");
-    io:println("6. Add To Cart");
-    io:println("7. Place Order");
-    io:println("8. Create Users");
-    io:println("9. Exit");
-
-    return check int:fromString(getInput("\nChoose an option (1-9): "));
-}
