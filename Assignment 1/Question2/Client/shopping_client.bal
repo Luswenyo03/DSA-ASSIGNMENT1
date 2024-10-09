@@ -1,507 +1,262 @@
- import ballerina/http;
 import ballerina/io;
 
-string baseUrl = "http://localhost:8080/pdu";
-http:Client pduclient = check new (baseUrl);
+ShoppingClient ep = check new ("http://localhost:9090");
 
-public type Programme record {|
-    string programme_code;
-    int nqf_level;
-    string faculty_name;
-    string department_name;
-    string programme_title;
-    string reg_date;
-    //string review_date;
-    Course[] courses;
-|};
-
-public type Course record {|
-    string courseCode;
-    string courseName;
-    int nqf_level;
-|};
-
-public type FacultyNamesResponse record {
-    string[] faculty_names;
-};
-
-public type ErrorMsg record {|
-    string errmsg;
-|};
-
-// Helper function to read user input
+// Function to capture user input
 function getInput(string prompt) returns string {
     io:print(prompt);
-    string? userInput = io:readln();
-    return userInput ?: "";
+    return io:readln();
 }
 
-function addProgramme() returns Programme|ErrorMsg|error {
-    io:println("\n***** Programme Info *****");
+public function displayProduct(Product product) returns error? {
+    io:println("\n*** Product Details ***\n");
+    io:println("SKU: " + product.sku);
+    io:println("Name: " + product.name);
+    io:println("Description: " + product.description);
+    io:println("Price: N$: " + product.price.toString());
+    io:println("Stock Quantity: " + product.stock_quantity.toString());
+    io:println("Status: " + product.status);
+    io:println("\n ------------------------------\n");
+}
 
-    // Capture programme details
-    string programmeCode = getInput("\nEnter Programme Code: ");
-    int nqfLevel = check getValidatedIntegerInput("Enter NQF Level (integer): ");
-    string facultyName = getInput("Enter Faculty Name: ");
-    string departmentName = getInput("Enter Department Name: ");
-    string programmeTitle = getInput("Enter Programme Title: ");
-    string regDate = getInput("Enter Registration Date (YYYY-MM-DD): ");
+// Function to add a product
+function addProduct() returns error? {
 
-    io:println("\n***** Course Info *****");
+    io:println("\n ***Adding new product***");
 
-    // Capture course details, handle errors if any
-    Course[] courses = check collectCourses();
+    string sku = getInput("\n  Enter product SKU: ");
+    string name = getInput("  Enter product name: ");
+    string description = getInput("  Enter product description: ");
 
-    // Programme creation
-    Programme programme = {
-        programme_code: programmeCode,
-        nqf_level: nqfLevel,
-        faculty_name: facultyName,
-        department_name: departmentName,
-        programme_title: programmeTitle,
-        reg_date: regDate,
-        courses: courses
+    float price = 0.0; // Initialize with a default value
+    while true {
+        string priceInput = getInput("  Enter product price (e.g. 100.00) N$: ");
+        var result = float:fromString(priceInput);
+        if result is float {
+            price = result;
+            if (price < 0.0) {
+                io:println("\n  Error: Price must be a positive float.\n");
+            } else {
+                break;
+            }
+        } else {
+            io:println("\n  Error: Invalid input for price. Please enter a valid float like 100.00.\n");
+        }
+    }
+
+    int stock_quantity = 0; // Initialize with a default value
+    while true {
+        string quantityInput = getInput("  Enter stock quantity: ");
+        var result = int:fromString(quantityInput);
+        if result is int {
+            stock_quantity = result;
+            if (stock_quantity < 0) {
+                io:println("\n  Error: Stock quantity must be a non-negative integer.\n");
+            } else {
+                break;
+            }
+        } else {
+            io:println("\n  Error: Invalid input for quantity. Please enter a valid integer.\n");
+        }
+    }
+
+    string statusInput = ""; // Initialize with an empty string
+    while true {
+        string statusChoice = getInput("  Enter product status (A for available, U for unavailable): ");
+        if (statusChoice == "A") {
+            statusInput = "available";
+            break;
+        } else if (statusChoice == "U") {
+            statusInput = "unavailable";
+            break;
+        } else {
+            io:println("\n  Error: Status must be 'A' for available or 'U' for unavailable.\n");
+        }
+    }
+
+    AddProductRequest addProductRequest = {
+        product: {
+            sku: sku,
+            name: name,
+            description: description,
+            price: price,
+            stock_quantity: stock_quantity,
+            status: statusInput
+        }
     };
 
-    // POST request to add the programme
-    Programme|error response = pduclient->/programme.post(programme);
-    if (response is Programme) {
-        return response;
-    } else {
-        ErrorMsg errorMsg = {errmsg: "Failed to add the programme."};
-        return errorMsg;
-    }
+    AddProductResponse addProductResponse = check ep->addProduct(addProductRequest);
+
+    io:println("\n Successfully added new product: " + addProductResponse.toString());
 }
 
-// Function to retrieve all programmes from the server
-function retrieveProgrammes() returns Programme[]|ErrorMsg|error {
-    // Send a GET request to retrieve all programmes
-    Programme[]|error response = pduclient->/programmes.get();
+// Function to update a product
+function updateProduct() returns error? {
+    io:println("\n ***Update product***");
 
-    // Check if the response is successful or contains an error
-    if (response is Programme[]) {
-        return response;
-    } else {
-        ErrorMsg errorMsg = {errmsg: "Failed to retrieve programmes."};
-        return errorMsg;
-    }
-}
+    string sku = getInput("\n  Enter product SKU: ");
 
-// Function to get a programme by code
-function getProgrammeByCode(string programmeCode) returns Programme|ErrorMsg|error {
-    Programme|error response = pduclient->get(string `/programme/${programmeCode}`);
+    string updatedSku = getInput("  Enter updated product SKU: ");
+    string updatedName = getInput("  Enter updated product name: ");
+    string updatedDescription = getInput("  Enter updated product description: ");
 
-    if (response is Programme) {
-        return response;
-    } else {
-        ErrorMsg errorMsg = {errmsg: "Failed to retrieve programmes."};
-        return errorMsg;
-    }
-}
-
-// Function to update an existing programme interactively
-function updateProgramme() returns Programme|ErrorMsg|error? {
-    string programmeCode = getInput("\nEnter Programme Code to update: ");
-
-    // Retrieve existing programme
-    Programme|ErrorMsg existingProgrammeResult = check getProgrammeByCode(programmeCode);
-    if (existingProgrammeResult is ErrorMsg) {
-        io:println("\nProgramme not found.\n");
-        return existingProgrammeResult;
-    }
-
-    // Get the existing programme details
-    Programme existingProgramme = existingProgrammeResult;
-
-    // Update basic details
-    existingProgramme.nqf_level = check 'int:fromString(getInput("\nEnter new NQF Level (integer): "));
-    existingProgramme.faculty_name = getInput("Enter new Faculty Name: ");
-    existingProgramme.department_name = getInput("Enter new Department Name: ");
-
-    // Ask user if they want to change Programme Title
-    string changeTitle = getInput("\nDo you want to change the Programme Title? (y/n): ");
-    if (changeTitle == "y" || changeTitle == "Y") {
-        existingProgramme.programme_title = getInput("\nEnter new Programme Title: ");
-    }
-
-    // Ask user if they want to change Registration Date
-    string changeRegDate = getInput("\nDo you want to change the Registration Date? (y/n): ");
-    if (changeRegDate == "y" || changeRegDate == "Y") {
-        existingProgramme.reg_date = getInput("\nEnter new Registration Date (YYYY-MM-DD): ");
-    }
-
-    // Collect new courses, update existing courses or delete courses
-    existingProgramme.courses = check manageCourses(existingProgramme.courses);
-
-    // Post updated programme to the server
-    Programme|error response = pduclient->put(string `/updateProgramme/${programmeCode}`, existingProgramme);
-
-    if (response is Programme) {
-        return response;
-    } else {
-        io:println("Error occurred while updating the programme.");
-        return response;
-    }
-}
-
-// Function to manage courses: add, delete, or update
-function manageCourses(Course[] currentCourses) returns Course[]|error {
-    io:println("\nManage courses:\n");
-    io:println("1. Add new course");
-    io:println("2. Delete a course");
-    io:println("3. Update existing course");
-    int choice = check 'int:fromString(getInput("\nChoose an option (1/2/3): "));
-
-    if (choice == 1) {
-        // Add new courses
-        return check addCourses(currentCourses);
-    } else if (choice == 2) {
-        // Delete a course
-        return deleteCourse(currentCourses);
-    } else if (choice == 3) {
-        // Update existing courses
-        return updateCourse(currentCourses);
-    } else {
-        io:println("\nInvalid choice.\n");
-        return currentCourses;
-    }
-}
-
-// Function to add new courses
-function addCourses(Course[] currentCourses) returns Course[]|error {
-    Course[] updatedCourses = currentCourses; // Directly assign the currentCourses to updatedCourses
-    boolean addMore = true;
-
-    while (addMore) {
-        Course newCourse = {courseCode: "", courseName: "", nqf_level: 7};
-        newCourse.courseCode = getInput("\nEnter new Course Code: ");
-        newCourse.courseName = getInput("Enter new Course Name: ");
-        newCourse.nqf_level = check 'int:fromString(getInput("Enter new NQF Level (integer): "));
-
-        updatedCourses.push(newCourse);
-
-        string moreCourses = getInput("\nDo you want to add another course? (y/n): ");
-        if (moreCourses != "y" && moreCourses != "Y") {
-            addMore = false;
-        }
-    }
-
-    return updatedCourses;
-}
-
-// Function to delete a course
-function deleteCourse(Course[] currentCourses) returns Course[] {
-    io:println("\nCurrent courses:\n");
-    foreach Course course in currentCourses {
-        io:println("Code: " + course.courseCode + ", Name: " + course.courseName);
-    }
-
-    string courseCodeToDelete = getInput("\nEnter the Course Code to delete: ");
-    Course[] updatedCourses = [];
-
-    foreach Course course in currentCourses {
-        if (course.courseCode != courseCodeToDelete) {
-            updatedCourses.push(course);
-        }
-    }
-
-    return updatedCourses;
-}
-
-// Function to update a course
-function updateCourse(Course[] currentCourses) returns Course[] {
-    io:println("\nCurrent courses:\n");
-    foreach Course course in currentCourses {
-        io:println("Code: " + course.courseCode + ", Name: " + course.courseName);
-    }
-
-    string courseCodeToUpdate = getInput("\nEnter the Course Code to update: ");
-    Course[] updatedCourses = [];
-    boolean courseUpdated = false;
-
-    foreach Course course in currentCourses {
-        if (course.courseCode == courseCodeToUpdate) {
-            io:println("\nUpdating course: " + course.courseCode);
-            course.courseName = getInput("Enter new Course Name: ");
-
-            string nqfLevelInput = getInput("Enter new NQF Level (integer): ");
-            int|error nqfLevelResult = int:fromString(nqfLevelInput);
-
-            if (nqfLevelResult is int) {
-                course.nqf_level = nqfLevelResult;
+    float updatedPrice = 0.0; // Initialize with a default value
+    while true {
+        string priceInput = getInput("  Enter updated price: ");
+        var result = float:fromString(priceInput);
+        if result is float {
+            updatedPrice = result;
+            if (updatedPrice < 0.0) {
+                io:println("\n  Error: Price must be a positive float.");
             } else {
-                io:println("\nInvalid NQF Level. Keeping the old value.\n");
+                break;
             }
-
-            courseUpdated = true;
-        }
-        updatedCourses.push(course);
-    }
-
-    if (!courseUpdated) {
-        io:println("\nNo course found with code: " + courseCodeToUpdate);
-    }
-
-    return updatedCourses;
-}
-
-// Function to delete a programme interactively
-function deleteProgramme() returns ErrorMsg? {
-    string programmeCode = getInput("\nEnter Programme Code to delete: ");
-
-    // Send DELETE request to the server
-    http:Response|error response = pduclient->delete(string `/deleteProgram/${programmeCode}`);
-
-    if (response is http:Response) {
-        if (response.statusCode == 200) {
-            io:println("\nProgramme deleted successfully.\n");
-            return;
         } else {
-            io:println("\nUnexpected error format received from server.\n");
-            return;
+            io:println("\n  Error: Invalid input for price. Please enter a valid float like 100.00.");
         }
-    } else {
-        io:println("\nError occurred while deleting the programme.\n");
-        return;
-    }
-}
-
-// Function to retrieve all faculty names
-function getFaculties() returns FacultyNamesResponse|ErrorMsg|error {
-
-    // Send a GET request to the server
-    FacultyNamesResponse|error response = pduclient->get("/faculties");
-
-    // Check if the response is a FacultyNamesResponse or an error
-    if (response is FacultyNamesResponse) {
-        return response;
-    } else {
-        // Return an error message if retrieval failed
-        ErrorMsg errorMsg = {errmsg: "Failed to retrieve faculties."};
-        return errorMsg;
-    }
-}
-
-// Function to retrieve all programmes by faculty name
-function getProgrammeByFaculty() returns Programme[]|ErrorMsg|error {
-
-    io:println("\n Available Faculties:\n");
-
-    // Retrieve the list of faculties
-    FacultyNamesResponse|ErrorMsg|error result = getFaculties();
-
-    // Handle the result
-    if (result is FacultyNamesResponse) {
-        // Display all available faculties
-        int count = 1;
-        foreach var faculty in result.faculty_names {
-            io:println(" #" + count.toString() + ". " + faculty);
-            count = count + 1;
-        }
-    } else if (result is ErrorMsg) {
-        return result; // Return the ErrorMsg if it failed to retrieve faculties
-    } else {
-        return error("\n Failed to retrieve faculties.\n");
     }
 
-    // Get user input for faculty name
-    string facultyNameCode = getInput("\nEnter Faculty Name: ");
-
-    // Construct the URL properly and send GET request to retrieve programmes
-    Programme[]|error response = pduclient->get(string `/programmes/faculty/${facultyNameCode}`);
-
-    if (response is Programme[]) {
-        return response;
-    } else {
-        // Return an error message if retrieval failed
-        ErrorMsg errorMsg = {errmsg: "\nFailed to retrieve programmes.\n"};
-        return errorMsg;
-    }
-}
-
-function getReviewProgramme() returns Programme[]|ErrorMsg|error {
-
-    Programme[]|error response = pduclient->get("/reviewProgrammes");
-
-    // Check if the response is a FacultyNamesResponse or an error
-    if (response is Programme[]) {
-        return response;
-    } else {
-        // Return an error message if retrieval failed
-        ErrorMsg errorMsg = {errmsg: "Failed to retrieve review programmes."};
-        return errorMsg;
-    }
-}
-
-// Function to capture and validate integer input
-function getValidatedIntegerInput(string prompt) returns int|error {
+    int updatedStockQuantity = 0; // Initialize with a default value
     while true {
-        string input = getInput(prompt);
-        var result = int:fromString(input);
-        if (result is int) {
-            return result;
+        string quantityInput = getInput("  Enter updated stock quantity: ");
+        var result = int:fromString(quantityInput);
+        if result is int {
+            updatedStockQuantity = result;
+            if (updatedStockQuantity < 0) {
+                io:println("  Error: Stock quantity must be a non-negative integer.");
+            } else {
+                break;
+            }
         } else {
-            io:println("Invalid input. Please enter an integer value.");
+            io:println("  Error: Invalid input for quantity. Please enter a valid integer.");
         }
     }
-}
 
-// Function to collect courses from the user
-function collectCourses() returns Course[]|error {
-    Course[] courses = [];
-    string addAnotherCourse = "y";
-
-    while addAnotherCourse == "y" || addAnotherCourse == "Y" {
-        string courseCode = getInput("\nEnter Course Code: ");
-        string courseName = getInput("Enter Course Name: ");
-        int courseNQFLevel = check getValidatedIntegerInput("Enter Course NQF Level (integer): ");
-
-        Course newCourse = {courseCode: courseCode, courseName: courseName, nqf_level: courseNQFLevel};
-        courses.push(newCourse);
-
-        addAnotherCourse = getValidatedYesNoInput("\nAdd another course? (y/n): ");
-    }
-    return courses;
-}
-
-// Function to validate 'y' or 'n' input
-function getValidatedYesNoInput(string prompt) returns string {
+    string updatedStatus = ""; // Initialize with a default value
     while true {
-        string input = getInput(prompt);
-        if (input == "y" || input == "Y" || input == "n" || input == "N") {
-            return input;
+        string statusInput = getInput("  Enter updated product status (A for available, U for unavailable): ");
+        if (statusInput == "A") {
+            updatedStatus = "available";
+            break;
+        } else if (statusInput == "U") {
+            updatedStatus = "unavailable";
+            break;
         } else {
-            io:println("Invalid input. Please enter 'y' or 'n'.");
+            io:println("  Error: Status must be 'A' for available or 'U' for unavailable. Please enter again.");
         }
     }
+
+    UpdateProductRequest updateProductRequest = {
+        sku: sku,
+        product: {
+            sku: updatedSku,
+            name: updatedName,
+            description: updatedDescription,
+            price: updatedPrice,
+            stock_quantity: updatedStockQuantity,
+            status: updatedStatus
+        }
+    };
+
+    check ep->updateProduct(updateProductRequest);
+
+    io:println("\n Successfully updated product: ");
 }
 
-// Function to display a Programme object
-function displayProgramme(Programme programme) {
+// Function to remove a product
+function removeProduct() returns error? {
+    RemoveProductRequest removeProductRequest = {sku: getInput("Enter product SKU to remove: ")};
+    ListProductsResponse removeProductResponse = check ep->removeProduct(removeProductRequest);
+    io:println(removeProductResponse);
+}
 
-    io:println(" Programme Code: " + programme.programme_code);
-    io:println(" NQF Level: " + programme.nqf_level.toString());
-    io:println(" Faculty Name: " + programme.faculty_name);
-    io:println(" Department Name: " + programme.department_name);
-    io:println(" Programme Title: " + programme.programme_title);
-    io:println(" Registration Date: " + programme.reg_date);
+// Function to list available products
+function listAvailableProducts() returns error? {
+    ListProductsResponse listAvailableProductsResponse = check ep->listAvailableProducts();
+    io:println(listAvailableProductsResponse);
+}
 
-    io:println("\n Courses:\n");
-    foreach Course course in programme.courses {
-        io:println("  Course Code: " + course.courseCode);
-        io:println("  Course Name: " + course.courseName);
-        io:println("  NQF Level: " + course.nqf_level.toString());
-        io:println(); // Adds a blank line for readability
-    }
+// Function to search for a product
+function searchProduct() returns error? {
+    SearchProductRequest searchProductRequest = {sku: getInput("Enter product SKU to search: ")};
+    SearchProductResponse searchProductResponse = check ep->searchProduct(searchProductRequest);
+    io:println(searchProductResponse);
+}
+
+// Function to add to cart
+function addToCart() returns error? {
+    AddToCartRequest addToCartRequest = {
+        user_id: getInput("Enter user ID: "),
+        sku: getInput("Enter product SKU to add: "),
+        quantity: check int:fromString(getInput("Enter quantity: "))
+    };
+    check ep->addToCart(addToCartRequest);
+}
+
+// Function to place an order
+function placeOrder() returns error? {
+    PlaceOrderRequest placeOrderRequest = {user_id: getInput("Enter user ID to place order: ")};
+    PlaceOrderResponse placeOrderResponse = check ep->placeOrder(placeOrderRequest);
+    io:println(placeOrderResponse);
+}
+
+// Function to create users
+function createUsers() returns error? {
+    CreateUsersRequest createUsersRequest = {
+        users: [
+            {
+                user_id: getInput("Enter user ID: "),
+                name: getInput("Enter user name: "),
+                'type: <UserType>getInput("Enter user type (CUSTOMER/ADMIN): ")
+            }
+        ]
+    };
+    CreateUsersResponse createUsersResponse = check ep->createUsers(createUsersRequest);
+    io:println(createUsersResponse);
 }
 
 // Main function to handle user choices
 public function main() returns error? {
     while true {
-        io:println("\n==== Programme Management System ====");
-        io:println("");
-        io:println("1. Add a new programme");
-        io:println("2. Retrieve all PDU programme");
-        io:println("3. Update an existing programme");
-        io:println("4. Retrieve programme info");
-        io:println("5. Delete programme");
-        io:println("6. Retrieve review programme");
-        io:println("7. Retrieve all PDU programme by faculty");
-        io:println("8. Exit");
+        int choice = check getUserChoice();
 
-        int choice = check int:fromString(getInput("\nChoose an option (1-7): "));
-
-        if (choice == 1) {
-            Programme|ErrorMsg? result = check addProgramme();
-            if (result is Programme) {
-                io:println("\n Programme added successfully ");
-                displayProgramme(result);
-            } else if (result is ErrorMsg) {
-                io:println("Error: " + result.errmsg);
-            }
-        } else if (choice == 2) {
-
-            Programme[]|ErrorMsg|error result = retrieveProgrammes();
-
-            if (result is Programme[]) {
-                io:println("\n*** " + result.length().toString() + " programmes retrieved ***\n");
-                int count = 1;
-
-                foreach Programme programme in result {
-                    io:println("Programme #" + count.toString() + "\n");
-                    displayProgramme(programme);
-                    count = count + 1;
-                }
-            } else if (result is ErrorMsg) {
-                io:println("Error: " + result.errmsg);
-            } else {
-                io:println("An error occurred while retrieving the programmes.");
-            }
-
-        } else if (choice == 3) {
-
-            Programme|ErrorMsg? result = check updateProgramme();
-            if (result is Programme) {
-                io:println("\n Programme updated successfully \n");
-                displayProgramme(result);
-            } else if (result is ErrorMsg) {
-                io:println("Error: " + result.errmsg);
-            }
-
-        } else if (choice == 4) {
-            string programmeCode = getInput("\nEnter Programme Code: ");
-            Programme|ErrorMsg result = check getProgrammeByCode(programmeCode);
-
-            if (result is Programme) {
-                io:println("\nProgramme retrieved successfully:\n");
-                displayProgramme(result);
-            } else {
-                io:println("Error: " + result.errmsg);
-            }
-        } else if (choice == 5) {
-            ErrorMsg? programme = deleteProgramme();
-
-        } else if (choice == 6) {
-
-            Programme[]|ErrorMsg|error result = getReviewProgramme();
-
-            if (result is Programme[]) {
-                io:println("\n*** " + result.length().toString() + " programmes retrieved ***\n");
-                int count = 1;
-
-                foreach Programme programme in result {
-                    io:println("Programme #" + count.toString() + "\n");
-                    displayProgramme(programme);
-                    count = count + 1;
-                }
-            } else if (result is ErrorMsg) {
-                io:println("Error: " + result.errmsg);
-            } else {
-                io:println("An error occurred while retrieving the programmes.");
-            }
-        } else if (choice == 7) {
-
-            Programme[]|ErrorMsg|error result = getProgrammeByFaculty();
-
-            if (result is Programme[]) {
-                io:println("\n*** " + result.length().toString() + " programmes retrieved ***\n");
-                int count = 1;
-
-                foreach Programme programme in result {
-                    io:println("Programme #" + count.toString() + "\n");
-                    displayProgramme(programme);
-                    count = count + 1;
-                }
-            } else if (result is ErrorMsg) {
-                io:println("Error: " + result.errmsg);
-            } else {
-                io:println("An error occurred while retrieving the programmes.");
-            }
-        } else if (choice == 8) {
-            io:println("\nExiting...");
+        if choice == 1 {
+            check addProduct();
+        } else if choice == 2 {
+            check updateProduct();
+        } else if choice == 3 {
+            check removeProduct();
+        } else if choice == 4 {
+            check listAvailableProducts();
+        } else if choice == 5 {
+            check searchProduct();
+        } else if choice == 6 {
+            check addToCart();
+        } else if choice == 7 {
+            check placeOrder();
+        } else if choice == 8 {
+            check createUsers();
+        } else if choice == 9 {
+            io:println("Exiting...");
             return;
         } else {
-            io:println("\nInvalid option. Please try again.\n");
+            io:println("Invalid option. Please try again.");
         }
     }
+}
+
+// Function to display menu and get user choice
+function getUserChoice() returns int|error {
+    io:println("\n==== Shopping Management System ====\n");
+    io:println("1. Add Product");
+    io:println("2. Update Product");
+    io:println("3. Remove Product");
+    io:println("4. List Available Products");
+    io:println("5. Search Product");
+    io:println("6. Add To Cart");
+    io:println("7. Place Order");
+    io:println("8. Create Users");
+    io:println("9. Exit");
+
+    return check int:fromString(getInput("\nChoose an option (1-9): "));
 }
